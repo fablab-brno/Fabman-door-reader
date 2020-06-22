@@ -32,3 +32,5 @@ First version of the board. Step-down converter is not working (wrong layout). R
 
 Step-down converter is now using reference design for MP1584EN (working on external board). RGB LED connection fixed. Relay and 3-pon JST connector moved to bottom side to save some height. Added setup button for WiFiManager.
 
+![](https://github.com/fablab-brno/Fabman-door-reader/blob/master/img/FM_door.JPG)
+
