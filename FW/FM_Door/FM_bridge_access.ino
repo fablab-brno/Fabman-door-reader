@@ -9,29 +9,57 @@ DynamicJsonDocument keyBuffer(2048);
 JsonObject root = keyBuffer.as<JsonObject>();
 
 void getMember() {
-    /*** Sending sw stop, to clear currSessId***/
-    if (currSessId != 0) {
-      sendStop();
-      Serial.println("Sending stop at the end of card reading");
-    }
-
-    String cardId = "";
-    cardId += "\"";
-    cardId += data2;
-    cardId += "\"";
-    Serial.print("ID of card is: ");
-    Serial.println(cardId);
-    Serial.println();
-    if (tempCardId != cardId) {
-      tempCardId = "";
-      tempCardId = cardId;
-    }
-    if (cardId != "\"FFFFFFFFFFFF\"") {
-      query[cardId.length() + 1];
-      cardId.toCharArray(query, cardId.length() + 1);
-
-      if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
-
+  /*** Sending sw stop, to clear currSessId***/
+  if (currSessId != 0) {
+    sendStop();
+    Serial.println("Sending stop at the end of card reading");
+  }
+  String cardId = "";
+  cardId += "\"";
+  cardId += data2;
+  cardId += "\"";
+  Serial.print("ID of card is: ");
+  Serial.println(cardId);
+  Serial.println();
+  if (tempCardId != cardId) {
+    tempCardId = "";
+    tempCardId = cardId;
+  }
+  if (cardId != "\"FFFFFFFFFFFF\"") {
+    query[cardId.length() + 1];
+    cardId.toCharArray(query, cardId.length() + 1);
+    if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
+      if (checkOH != 1) { //check if member have any active package
+        String http_header = "https://fabman.io/api/v1/members?keyType=em4102&keyToken=" + String(data2) + "&embed=activePackages";
+        http.begin(client, http_header);  //Specify destination for HTTP request
+        http.addHeader("Content-Type", "application/json"); //Specify content-type header
+        http.addHeader("Accept", "application/json");
+        http.addHeader("Authorization", API_key_user);
+        Serial.print("HTTP header is: ");
+        Serial.println(http_header);
+        int httpResponseCode = http.GET();   //Send the actual POST request
+        String payload_ = http.getString();
+        Serial.println("JSON from server:");
+        Serial.println(payload_);
+        Serial.println();
+        yield();
+        if (httpResponseCode == 200) {
+          const size_t capacity = 2 * JSON_ARRAY_SIZE(1) + 2 * JSON_OBJECT_SIZE(1) + 2 * JSON_OBJECT_SIZE(3) + JSON_OBJECT_SIZE(15) + JSON_OBJECT_SIZE(20) + JSON_OBJECT_SIZE(45) + 1480;
+          DynamicJsonDocument jsonBuffer(capacity);
+          deserializeJson(jsonBuffer, payload_);
+          JsonObject root = jsonBuffer[0];
+          JsonObject activePackage = root["_embedded"]["memberPackages"][0];
+          Serial.println("Active package(bool): " + activePackage);
+          if (activePackage.isNull()) {
+            Serial.println("No active package found");
+            granted = 2;
+          } else {
+            Serial.println("Active package found");
+            granted = 1;
+          }
+        }
+        http.end();  //Free resources
+      } else {
         String message = "";
         message += "{\"keys\":[{\"type\":\"em4102\",\"token\":";
         message += query;
@@ -44,7 +72,6 @@ void getMember() {
         message += "}";
         char messageChar[message.length() + 1];
         message.toCharArray(messageChar, message.length() + 1);
-
         http.begin(client, "https://fabman.io/api/v1/bridge/access/");  //Specify destination for HTTP request
         http.addHeader("Content-Type", "application/json");             //Specify content-type header
         http.addHeader("Accept", "application/json");
@@ -152,33 +179,35 @@ void getMember() {
           online = 0;
           connection();
         }
-      } // end of the part where is FM connected
-      else { // no network to connect -> offline mode
-        Serial.println("Error in WiFi connection");
-        Serial.println("Checking Admin keys");
-        compareKeys(offlineKeys, data2); // compare card which was read to known admin cards
-        if ((adminKey == 1) || (httpResponseCode == -11)) {
-          //  if  (offlineKeys.equalsIgnoreCase(cardId)) {
-          Serial.println("Admin card found.");
-          Serial.println();
-          granted = 1;
-          neopixelAllowed();
-          userLogedIn = 1;
-          timeOfAction = millis();
-          Serial.println("Start of countdown..");
-        } else {
-          Serial.println("Admin card not found");
-          Serial.println("User is not allowed");
-          Serial.println();
-          FM_mode_timout();
-        }
-        // }
       }
-      Serial.println("--------------------------------------------------");
-    } else {
-      Serial.println("ID of the card do not include number, skipping.");
+      // end of the part where is FM connected
+    } else { // no network to connect -> offline mode
+      Serial.println("Error in WiFi connection");
+      Serial.println("Checking Admin keys");
+      compareKeys(offlineKeys, data2); // compare card which was read to known admin cards
+      if ((adminKey == 1) || (httpResponseCode == -11)) {
+        //  if  (offlineKeys.equalsIgnoreCase(cardId)) {
+        Serial.println("Admin card found.");
+        Serial.println();
+        granted = 1;
+        neopixelAllowed();
+        userLogedIn = 1;
+        timeOfAction = millis();
+        Serial.println("Start of countdown..");
+      } else {
+        Serial.println("Admin card not found");
+        Serial.println("User is not allowed");
+        Serial.println();
+        FM_mode_timout();
+      }
+      // }
     }
+    Serial.println("--------------------------------------------------");
+  } else {
+    Serial.println("ID of the card do not include number, skipping.");
+  }
 }
+
 
 /*
    Function to compare card which was read in offline mode to check if is Admin card

@@ -16,3 +16,4 @@ unsigned long lastLastDeniedTime = lastDeniedTime;
 int grantedTimeout = 5000;
 unsigned long grantedTimoutLong = grantedTimeout;
 unsigned long logOffTimeout = 3600000; //one hour timout
+bool checkOH = 0; // if this value is 1, it will check for actual membership, not if member has any package
