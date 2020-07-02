@@ -1,5 +1,5 @@
 // FW info
-const String fwVersion = "0.1.0.0.0_beta";
+const String fwVersion = "0.1.0.1_beta";
 String version_url  = "http://your_domain/door_version.txt";
 String binURL = "http://your_domain/name_of_your.bin";
 
@@ -15,5 +15,4 @@ int lastDeniedTime = 2000;
 unsigned long lastLastDeniedTime = lastDeniedTime;
 int grantedTimeout = 5000;
 unsigned long grantedTimoutLong = grantedTimeout;
-unsigned long logOffTimeout = 3600000; //one hour timout
 bool checkOH = 0; // if this value is 1, it will check for actual membership, not if member has any package

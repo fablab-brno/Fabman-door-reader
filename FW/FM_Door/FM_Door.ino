@@ -15,6 +15,7 @@
 #include "cert.h"
 #include "wifimanager.h"
 #include "RGB_led.h"
+#include <NTPClient.h> //https://github.com/taranais/NTPClient
 
 extern DynamicJsonDocument keyBuffer;
 
@@ -26,11 +27,12 @@ SimpleTimer wifiTimer;
 SimpleTimer activityTimer;
 SimpleTimer checkUser;
 Preferences preferences;
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000); // change 3600 offset to your timezone
 
 int wifiStatus;
 byte data1 = 0;
 String data2 = "";
-String FM_userID;
 bool setupButtonState = 0;
 unsigned long currSessId;
 unsigned long prevSessId;
@@ -38,14 +40,15 @@ bool online;
 bool offline;
 String firstName = "";
 String lastName = "";
-char* config_offlineKeysbla_token;
+char* config_offlineKeys_token;
 String offlineKeys;
 String mac = "";
 String API_key = "";
 String machineName = "";
 bool adminKey = 0;
-int stableFW = 0;
 int granted = 0;
+int machineId;
+int memberId;
 
 WiFiClientSecure client;
 HTTPClient http;
@@ -121,7 +124,7 @@ void setup() {
   //reset settings - for testing
   setupButtonState = digitalRead(setupButtonPin);
   if (setupButtonState == 1) {
-    //    Serial.println("Calling WiFiManager resetSettings function"); 
+    //    Serial.println("Calling WiFiManager resetSettings function");
     //    wifiManager.resetSettings(); // uncomment this line if you want to reset WiFi settings
     if (!wifiManager.autoConnect("FabmanAP")) {
       Serial.println("failed to connect and hit timeout");
@@ -161,6 +164,9 @@ void setup() {
   }
 
   wifiStatus = WiFi.status();
+
+  timeClient.begin();
+  timeClient.update();
 
   Serial.print("configVersion is: ");
   Serial.println(configVersion);
@@ -217,7 +223,7 @@ void connection() {
   wifiStatus = WiFi.status();
   if (wifiStatus != WL_CONNECTED) {
     online = 0;
-     Serial.println("Trying to connect.. ");
+    Serial.println("Trying to connect.. ");
     Serial.println("");
     wifiMulti.run();
   } else if ((wifiStatus == WL_CONNECTED) && (online != 1)) {
@@ -232,58 +238,58 @@ void connection() {
 
 /* parse Config version from JSON */
 void get_configVersion() {
-    DynamicJsonDocument jsonBuffer(2048);
-    String JSONinput = payload;
+  DynamicJsonDocument jsonBuffer(2048);
+  String JSONinput = payload;
 
-      Serial.print("Config version payload: ");
-      Serial.println(payload);
+  Serial.print("Config version payload: ");
+  Serial.println(payload);
 
-    //Serial.println(payload);
-    Serial.println();
-    deserializeJson(jsonBuffer, JSONinput);
-    JsonObject root = jsonBuffer.as<JsonObject>();
+  //Serial.println(payload);
+  Serial.println();
+  deserializeJson(jsonBuffer, JSONinput);
+  JsonObject root = jsonBuffer.as<JsonObject>();
 
-    JsonObject config = root["config"];
-    currentConfigVersion = root["config"]["configVersion"];
-    JsonArray offlineKeys_array = config["offlineKeys"];
-    for (offlineKeys : offlineKeys_array) {
-      const char* token = offlineKeys["token"];
-    }
-    currentConfigVersion = root["config"]["configVersion"];
-    Serial.print("currentConfigVersion which is read: ");
-    Serial.println(currentConfigVersion);
-    if (currentConfigVersion != 0) {
-      if (currentConfigVersion != configVersion) {
-        Serial.print("configVersion which is read: ");
-        Serial.println(configVersion);
-        preferences.begin("store", false);
-        preferences.putUInt("configVersion", currentConfigVersion);
-        preferences.end();
-        Serial.println("Writing configVersion to NVS");
-        configVersion = currentConfigVersion;
-        offlineKeys = "";
-        Serial.print("offlineKeys: ");
-        Serial.println(offlineKeys);
-        for (byte i = 0; i < offlineKeys_array.size(); i++) {
-          const char* config_offlineKeysbla_token = offlineKeys_array[i]["token"];
-          offlineKeys += config_offlineKeysbla_token;
-          offlineKeys += (",");
-        }
-        preferences.begin("store", false);
-        preferences.putString("offlineKeys", offlineKeys);
-        preferences.end();
-        Serial.println("Offline keys are stored in NVS");
-        Serial.print("offlineKeys: ");
-        Serial.println(offlineKeys);
-        Serial.println();
-        Serial.print("There should be total of ");
-        Serial.print(offlineKeys_array.size());
-        Serial.println(" keys.");
+  JsonObject config = root["config"];
+  currentConfigVersion = root["config"]["configVersion"];
+  JsonArray offlineKeys_array = config["offlineKeys"];
+  for (offlineKeys : offlineKeys_array) {
+    const char* token = offlineKeys["token"];
+  }
+  currentConfigVersion = root["config"]["configVersion"];
+  Serial.print("currentConfigVersion which is read: ");
+  Serial.println(currentConfigVersion);
+  if (currentConfigVersion != 0) {
+    if (currentConfigVersion != configVersion) {
+      Serial.print("configVersion which is read: ");
+      Serial.println(configVersion);
+      preferences.begin("store", false);
+      preferences.putUInt("configVersion", currentConfigVersion);
+      preferences.end();
+      Serial.println("Writing configVersion to NVS");
+      configVersion = currentConfigVersion;
+      offlineKeys = "";
+      Serial.print("offlineKeys: ");
+      Serial.println(offlineKeys);
+      for (byte i = 0; i < offlineKeys_array.size(); i++) {
+        const char* config_offlineKeys_token = offlineKeys_array[i]["token"];
+        offlineKeys += config_offlineKeys_token;
+        offlineKeys += (",");
       }
-    } else {
-      Serial.println("No need to change configVersion in NVS");
+      preferences.begin("store", false);
+      preferences.putString("offlineKeys", offlineKeys);
+      preferences.end();
+      Serial.println("Offline keys are stored in NVS");
+      Serial.print("offlineKeys: ");
+      Serial.println(offlineKeys);
+      Serial.println();
+      Serial.print("There should be total of ");
+      Serial.print(offlineKeys_array.size());
+      Serial.println(" keys.");
     }
-    Serial.println();
+  } else {
+    Serial.println("No need to change configVersion in NVS");
+  }
+  Serial.println();
 }
 
 
@@ -304,18 +310,21 @@ void setAPIkey() {
   if (mac == "F4:CF:A2:82:FC:D4") {
     API_key = "Bearer some_API_key"; // First device
     machineName = "First device name";
+    machineId = 0; //change this number with your real equipment number
     Serial.print("Set to ");
     Serial.println(machineName);
   }
   else if (mac == "F4:CF:A2:82:FC:EC") {
     API_key = "Bearer some_API_key"; // Second device
     machineName = "Second device name";
+    machineId = 0; //change this number with your real equipment number
     Serial.print("Set to ");
     Serial.println(machineName);
   }
   else {
     API_key = "Bearer Second device name"; // Test machine
     machineName = "Test machine";
+    machineId = 0; //change this number with your real equipment number
     Serial.print("Set to ");
     Serial.println(machineName);
   }

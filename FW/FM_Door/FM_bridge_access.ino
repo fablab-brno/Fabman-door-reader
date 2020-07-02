@@ -48,6 +48,7 @@ void getMember() {
           DynamicJsonDocument jsonBuffer(capacity);
           deserializeJson(jsonBuffer, payload_);
           JsonObject root = jsonBuffer[0];
+          memberId = root["id"];
           JsonObject activePackage = root["_embedded"]["memberPackages"][0];
           Serial.println("Active package(bool): " + activePackage);
           if (activePackage.isNull()) {
@@ -56,6 +57,7 @@ void getMember() {
           } else {
             Serial.println("Active package found");
             granted = 1;
+            writeLog();
           }
         }
         http.end();  //Free resources
@@ -158,10 +160,6 @@ void getMember() {
             Serial.print("Session ID is: ");
             Serial.println(sessionId);
             currSessId = sessionId;
-            /*
-              Clear array of printed data & print what is in it..
-            */
-
             Serial.println();
             get_configVersion();
             userLogedIn = 1;
@@ -235,5 +233,51 @@ void FM_mode_timout() {
   unsigned long timout = 5000;
 
   if ((millis() - now_millis) > timout) {
+  }
+}
+
+void writeLog() {
+  String formattedDate = timeClient.getFormattedDate();
+
+  while (!timeClient.update()) {
+    timeClient.forceUpdate();
+  }
+  Serial.println(formattedDate);
+
+  String dataMessage = "";
+  dataMessage += "{\"resource\":";
+  dataMessage += machineId;
+  dataMessage += ",\"member\":";
+  dataMessage += memberId;
+  dataMessage += ",\"createdAt\":\"";
+  dataMessage += formattedDate;
+  dataMessage += "\",\"stoppedAt\":\"";
+  dataMessage += formattedDate;
+  dataMessage += "\",\"idleDurationSeconds\":0}";
+
+  Serial.println(dataMessage);
+
+  char dataMessageChar[dataMessage.length() + 1];
+  dataMessage.toCharArray(dataMessageChar, dataMessage.length() + 1);
+
+  String http_header = "https://fabman.io/api/v1/resource-logs";
+  Serial.print("HTTP header is: ");
+  Serial.println(http_header);
+  http.begin(client, http_header); //Specify destination for HTTP request
+  http.addHeader("Content-Type", "application/json"); //Specify content-type header
+  http.addHeader("Accept", "application/json");
+  http.addHeader("Authorization", API_key_user);
+
+  int httpResponseCode = http.POST(dataMessage);
+  if (httpResponseCode >= 0 ) {
+    String payload = http.getString();
+    Serial.print("Responde code: ");
+    Serial.println(httpResponseCode);   //Print return code
+    Serial.print("JSON from server:");
+    Serial.println(payload);
+    Serial.println();
+  } else {
+    Serial.print("Error on sending request: ");
+    Serial.println(httpResponseCode);
   }
 }

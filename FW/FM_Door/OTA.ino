@@ -15,9 +15,7 @@ void OTA() {
 void getVersion() {
   HTTPClient newHttp; //create new instance of HTTPclient, otherwize non SSL request will break communication with Fabman.io
   unsigned long nowMillis = millis();
-    if (stableFW == 0) {
       newHttp.begin(version_url);
-    } 
     //Serial.print("[HTTP] GET...\n");
     // start connection and send HTTP header
     int httpCode = newHttp.GET();
@@ -87,10 +85,7 @@ String FIRMWARE_URL = "";
 
 void updateFirmware() {
   HTTPClient newHttp; //create new instance of HTTPclient, otherwize non SSL request will break communication with Fabman.io
-    if (stableFW == 0) {
-      Serial.println("StableFW should [stable]");
       newHttp.begin(binURL);
-    } 
     // Start pulling down the firmware binary.
     //    newHttp.begin(FIRMWARE_URL);
     int httpCode = newHttp.GET();
