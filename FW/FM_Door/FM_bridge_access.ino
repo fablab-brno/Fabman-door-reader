@@ -28,7 +28,7 @@ void getMember() {
   if (cardId != "\"FFFFFFFFFFFF\"") {
     query[cardId.length() + 1];
     cardId.toCharArray(query, cardId.length() + 1);
-    if (WiFi.status() == WL_CONNECTED) { //Check WiFi connection status
+    if (online != 0) { //Check connection status
       if (checkOH != 1) { //check if member have any active package
         String http_header = "https://fabman.io/api/v1/members?keyType=em4102&keyToken=" + String(data2) + "&embed=activePackages";
         http.begin(client, http_header);  //Specify destination for HTTP request

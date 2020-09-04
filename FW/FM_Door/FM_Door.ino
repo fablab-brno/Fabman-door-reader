@@ -17,6 +17,28 @@
 #include "RGB_led.h"
 #include <NTPClient.h> //https://github.com/taranais/NTPClient
 
+#include <ETH.h>
+
+// Pin# of the enable signal for the external crystal oscillator (-1 to disable for internal APLL source)
+#define ETH_PHY_POWER 14
+
+// Type of the Ethernet PHY (LAN8720 or TLK110)
+#define ETH_TYPE ETH_PHY_LAN8720
+
+// I2C-address of Ethernet PHY (0 or 1 for LAN8720, 31 for TLK110)
+#define ETH_ADDR 1
+#define ETH_PHY_ADDR 1
+
+// Pin# of the I2C clock signal for the Ethernet PHY
+#define ETH_MDC_PIN 23
+
+// Pin# of the I2C IO signal for the Ethernet PHY
+#define ETH_MDIO_PIN 18
+
+#define ETH_CLK_MODE ETH_CLOCK_GPIO0_IN
+
+static bool eth_connected = false;
+
 extern DynamicJsonDocument keyBuffer;
 
 HardwareSerial RFID(2);
@@ -49,6 +71,7 @@ bool adminKey = 0;
 int granted = 0;
 int machineId;
 int memberId;
+bool useEthernet = 0;
 
 WiFiClientSecure client;
 HTTPClient http;
@@ -77,10 +100,16 @@ void setup() {
   machineName = preferences.getString("machineName", "");
   SSIDString = preferences.getString("SSIDString", "");
   passwordString = preferences.getString("passwordString", "");
+  useEthernet = preferences.getBool("useEthernet", useEthernet);
 
   preferences.end();
 
-  mac = getMacAddress();
+  if (useEthernet != 0) {
+    mac = getMacAddress(1);
+  } else {
+    mac = getMacAddress(0);
+  }
+
   Serial.println("MAC Address is: " + (mac));
   if (API_key != NULL) {
     Serial.println("Using API key from NVM.");
@@ -101,70 +130,73 @@ void setup() {
   Serial.println("FM version:" + (fwVersion));
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, LOW);
-
-  setWiFi();
-
-  // The extra parameters to be configured (can be either global or just in the setup)
-  // After connecting, parameter.getValue() will get you the configured value
-  // id/name placeholder/prompt default length
-  WiFiManagerParameter custom_api_key("API key", "API key", api_key_char, 40);
-
-  //WiFiManager
-  //Local intialization. Once its business is done, there is no need to keep it around
-  WiFiManager wifiManager;
-
-  //set config save notify callback
-  wifiManager.setSaveConfigCallback(saveConfigCallback);
-
-  wifiManager.addParameter(&custom_api_key);
-
-  heartbeatTimer.setInterval(60000, heartBeat);
-  wifiTimer.setInterval(15000, connection);
-
-  //reset settings - for testing
-  setupButtonState = digitalRead(setupButtonPin);
-  if (setupButtonState == 1) {
-    //    Serial.println("Calling WiFiManager resetSettings function");
-    //    wifiManager.resetSettings(); // uncomment this line if you want to reset WiFi settings
-    if (!wifiManager.autoConnect("FabmanAP")) {
-      Serial.println("failed to connect and hit timeout");
-      delay(3000);
-      //reset and try again, or maybe put it to deep sleep
-      ESP.restart();
-      delay(5000);
-    }
-  }
-
-  Serial.println("Connecting Wifi...");
-
-  int8_t scanResult;
-  scanResult = WiFi.scanNetworks();
-  if (scanResult == 0) {
-    Serial.println("No known WiFi found, going offline.");
-    offline = 1;
+  if (useEthernet != 0) {
+    WiFi.onEvent(WiFiEvent);
+    ETH.begin( PHY1 , 14, 23, 18 , ETH_PHY_LAN8720);
   } else {
-    connection();
+    setWiFi();
+
+    // The extra parameters to be configured (can be either global or just in the setup)
+    // After connecting, parameter.getValue() will get you the configured value
+    // id/name placeholder/prompt default length
+    WiFiManagerParameter custom_api_key("API key", "API key", api_key_char, 40);
+
+    //WiFiManager
+    //Local intialization. Once its business is done, there is no need to keep it around
+    WiFiManager wifiManager;
+
+    //set config save notify callback
+    wifiManager.setSaveConfigCallback(saveConfigCallback);
+
+    wifiManager.addParameter(&custom_api_key);
+
+    heartbeatTimer.setInterval(60000, heartBeat);
+    wifiTimer.setInterval(15000, connection);
+
+    //reset settings - for testing
+    setupButtonState = digitalRead(setupButtonPin);
+    if (setupButtonState == 1) {
+      //    Serial.println("Calling WiFiManager resetSettings function");
+      //    wifiManager.resetSettings(); // uncomment this line if you want to reset WiFi settings
+      if (!wifiManager.autoConnect("FabmanAP")) {
+        Serial.println("failed to connect and hit timeout");
+        delay(3000);
+        //reset and try again, or maybe put it to deep sleep
+        ESP.restart();
+        delay(5000);
+      }
+    }
+
+    Serial.println("Connecting Wifi...");
+
+    int8_t scanResult;
+    scanResult = WiFi.scanNetworks();
+    if (scanResult == 0) {
+      Serial.println("No known WiFi found, going offline.");
+      offline = 1;
+    } else {
+      connection();
+    }
+
+    //read updated parameters
+    strcpy(api_key_char, custom_api_key.getValue());
+    //  API_key = api_key_char.toString();
+    String API_key(api_key_char); //convert char array to String
+
+    //save the custom parameters to FS
+    if (shouldSaveConfig) {
+      Serial.println("saving config from WiFiManager");
+
+      preferences.begin("store", false);
+      String API_key_ = String("Bearer " + API_key);// combine predefined String "Bearer " with String from WiFiManager
+      preferences.putString("API_key", API_key_);
+      preferences.end();
+      Serial.print("API key saved to preferences");
+      //end save
+    }
+
+    wifiStatus = WiFi.status();
   }
-
-  //read updated parameters
-  strcpy(api_key_char, custom_api_key.getValue());
-  //  API_key = api_key_char.toString();
-  String API_key(api_key_char); //convert char array to String
-
-  //save the custom parameters to FS
-  if (shouldSaveConfig) {
-    Serial.println("saving config from WiFiManager");
-
-    preferences.begin("store", false);
-    String API_key_ = String("Bearer " + API_key);// combine predefined String "Bearer " with String from WiFiManager
-    preferences.putString("API_key", API_key_);
-    preferences.end();
-    Serial.print("API key saved to preferences");
-    //end save
-  }
-
-  wifiStatus = WiFi.status();
-
   timeClient.begin();
   timeClient.update();
 
@@ -202,6 +234,45 @@ void clearGranted() {
     if ((millis() - grantedTimoutLong) >= grantedTimeout) {
       granted = 0;
     }
+  }
+}
+
+void WiFiEvent(WiFiEvent_t event)
+{
+  switch (event) {
+    case SYSTEM_EVENT_ETH_START:
+      Serial.println("ETH Started");
+      //set eth hostname here
+      ETH.setHostname("esp32-ethernet");
+      break;
+    case SYSTEM_EVENT_ETH_CONNECTED:
+      Serial.println("ETH Connected");
+      break;
+    case SYSTEM_EVENT_ETH_GOT_IP:
+      Serial.print("ETH MAC: ");
+      Serial.print(ETH.macAddress());
+      Serial.print(", IPv4: ");
+      Serial.print(ETH.localIP());
+      if (ETH.fullDuplex()) {
+        Serial.print(", FULL_DUPLEX");
+      }
+      Serial.print(", ");
+      Serial.print(ETH.linkSpeed());
+      Serial.println("Mbps");
+      eth_connected = true;
+      online = 1;
+      OTA();
+      break;
+    case SYSTEM_EVENT_ETH_DISCONNECTED:
+      Serial.println("ETH Disconnected");
+      eth_connected = false;
+      break;
+    case SYSTEM_EVENT_ETH_STOP:
+      Serial.println("ETH Stopped");
+      eth_connected = false;
+      break;
+    default:
+      break;
   }
 }
 
@@ -294,10 +365,14 @@ void get_configVersion() {
 
 
 /* get String of device MAC address  */
-String getMacAddress() {
+String getMacAddress(bool device) { // 0 = wifi, 1 = ethernet
   uint8_t baseMac[6];
   // Get MAC address for WiFi station
-  esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
+  if (device == 1) {
+    esp_read_mac(baseMac, ESP_MAC_ETH);
+  } else {
+    esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
+  }
   char baseMacChr[18] = {0};
   sprintf(baseMacChr, "%02X:%02X:%02X:%02X:%02X:%02X", baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
   return String(baseMacChr);

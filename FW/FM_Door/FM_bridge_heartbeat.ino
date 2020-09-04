@@ -2,7 +2,7 @@
   sending heartbeat to Fabman
 */
 void heartBeat() {
-    if (wifiStatus == WL_CONNECTED) {
+    if (online != 0) { //Check connection 
       String heartMessage = "";
       heartMessage += "{\"configVersion\":";
       heartMessage += configVersion;

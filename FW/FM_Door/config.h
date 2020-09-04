@@ -1,5 +1,5 @@
 // FW info
-const String fwVersion = "0.1.0.1_beta";
+const String fwVersion = "0.1.0.2_beta";
 String version_url  = "http://your_domain/door_version.txt";
 String binURL = "http://your_domain/name_of_your.bin";
 
