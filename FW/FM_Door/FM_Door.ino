@@ -101,6 +101,7 @@ void setup() {
   SSIDString = preferences.getString("SSIDString", "");
   passwordString = preferences.getString("passwordString", "");
   useEthernet = preferences.getBool("useEthernet", useEthernet);
+  machineId = preferences.getInt("machineId", 0);
 
   preferences.end();
 
@@ -121,51 +122,24 @@ void setup() {
   Serial.println("configVersion is: " + String(configVersion));
   Serial.println("offlineKeys: " + (offlineKeys));
   Serial.println("API key is : " + (API_key));
+  Serial.println("Machine ID is: " + String(machineId));
   Serial.println("Previous session ID was: " + String(prevSessId));
-  Serial.println("Reset settings: " + String(resetSettings));
   Serial.println("SSIDs are: " + SSIDString);
   Serial.println("passwords are: " + passwordString);
 
   RFID.begin(9600); // start serial to RFID reader
   Serial.println("FM version:" + (fwVersion));
+
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, LOW);
+
+  setDevice();
+
   if (useEthernet != 0) {
     WiFi.onEvent(WiFiEvent);
     ETH.begin( PHY1 , 14, 23, 18 , ETH_PHY_LAN8720);
   } else {
     setWiFi();
-
-    // The extra parameters to be configured (can be either global or just in the setup)
-    // After connecting, parameter.getValue() will get you the configured value
-    // id/name placeholder/prompt default length
-    WiFiManagerParameter custom_api_key("API key", "API key", api_key_char, 40);
-
-    //WiFiManager
-    //Local intialization. Once its business is done, there is no need to keep it around
-    WiFiManager wifiManager;
-
-    //set config save notify callback
-    wifiManager.setSaveConfigCallback(saveConfigCallback);
-
-    wifiManager.addParameter(&custom_api_key);
-
-    heartbeatTimer.setInterval(60000, heartBeat);
-    wifiTimer.setInterval(15000, connection);
-
-    //reset settings - for testing
-    setupButtonState = digitalRead(setupButtonPin);
-    if (setupButtonState == 1) {
-      //    Serial.println("Calling WiFiManager resetSettings function");
-      //    wifiManager.resetSettings(); // uncomment this line if you want to reset WiFi settings
-      if (!wifiManager.autoConnect("FabmanAP")) {
-        Serial.println("failed to connect and hit timeout");
-        delay(3000);
-        //reset and try again, or maybe put it to deep sleep
-        ESP.restart();
-        delay(5000);
-      }
-    }
 
     Serial.println("Connecting Wifi...");
 
@@ -177,24 +151,6 @@ void setup() {
     } else {
       connection();
     }
-
-    //read updated parameters
-    strcpy(api_key_char, custom_api_key.getValue());
-    //  API_key = api_key_char.toString();
-    String API_key(api_key_char); //convert char array to String
-
-    //save the custom parameters to FS
-    if (shouldSaveConfig) {
-      Serial.println("saving config from WiFiManager");
-
-      preferences.begin("store", false);
-      String API_key_ = String("Bearer " + API_key);// combine predefined String "Bearer " with String from WiFiManager
-      preferences.putString("API_key", API_key_);
-      preferences.end();
-      Serial.print("API key saved to preferences");
-      //end save
-    }
-
     wifiStatus = WiFi.status();
   }
   timeClient.begin();
@@ -205,6 +161,80 @@ void setup() {
 
   Serial.println("Swipe your card...");
   startShow(granted);
+}
+
+void setDevice() {
+
+  // The extra parameters to be configured (can be either global or just in the setup)
+  // After connecting, parameter.getValue() will get you the configured value
+  // id/name placeholder/prompt default length
+  machine_name_char[39] = '\0';
+  api_key_char[39] = '\0';
+  WiFiManagerParameter custom_device_name("device_name", "Device name (max 40 chars)", machine_name_char, 40);
+  WiFiManagerParameter custom_api_key("API_key", "API key", api_key_char, 40);
+  IntParameter custom_machine_id("machine_id", "Machine ID from Fabman", machine_id_int);
+  IntParameter custom_use_lan("use_lan", "Use LAN port (0 = no, 1 = yes)", use_lan_int);
+
+  //WiFiManager
+  //Local intialization. Once its business is done, there is no need to keep it around
+  WiFiManager wifiManager;
+
+  //set config save notify callback
+  wifiManager.setSaveConfigCallback(saveConfigCallback);
+
+  wifiManager.addParameter(&custom_device_name);
+  wifiManager.addParameter(&custom_api_key);
+  wifiManager.addParameter(&custom_machine_id);
+  wifiManager.addParameter(&custom_use_lan);
+
+  //reset settings - for testing
+  setupButtonState = digitalRead(setupButtonPin);
+  if (setupButtonState == 0) { // right code for FL FM PCB
+    //if (stopButtonState == 1) { //uncomment for testing on ESP32 dev board
+    //    Serial.println("Calling WiFiManager resetSettings function");
+    wifiManager.resetSettings();
+    if (!wifiManager.autoConnect("FabmanAP")) {
+      Serial.println("failed to connect and hit timeout");
+      delay(3000);
+      //reset and try again, or maybe put it to deep sleep
+      ESP.restart();
+      delay(5000);
+    }
+  }
+
+  //read updated parameters
+  strcpy(machine_name_char, custom_device_name.getValue());
+  strcpy(api_key_char, custom_api_key.getValue());
+  machine_name_char[39] = '\0';
+  api_key_char[39] = '\0';
+  machine_id_int = custom_machine_id.getValue();
+  use_lan_int = custom_use_lan.getValue();
+  String API_key(api_key_char); //convert char array to String
+  String customName = (machine_name_char);
+
+  Serial.println("Device name is: " + customName);
+  Serial.println("API key is: " + API_key);
+  Serial.println("Bridge ID from WM is: " + String(machine_id_int));
+  Serial.println("Use LAN is: " + String(use_lan_int));
+
+  //save the custom parameters to FS
+  if (shouldSaveConfig) {
+    Serial.println("Saving config from WiFiManager");
+    Serial.println();
+
+    preferences.begin("store", false);
+    machineName = customName;
+    preferences.putString("machineName", machineName);
+    String API_key_ = "Bearer " + API_key;// combine predefined String "Bearer " with String from WiFiManager
+    preferences.putString("API_key", API_key_);
+    machineId = machine_id_int;
+    preferences.putInt("machineId", machineId);
+    useEthernet = use_lan_int;
+    preferences.putBool("useEthernet", useEthernet);
+    preferences.end();
+    Serial.println("Custom parameters saved to preferences");
+    //end save
+  }
 }
 
 void device() {

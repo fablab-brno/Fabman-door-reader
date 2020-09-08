@@ -1,9 +1,21 @@
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager (development branch)
 
+class IntParameter : public WiFiManagerParameter {
+public:
+    IntParameter(const char *id, const char *placeholder, long value, const uint8_t length = 10)
+        : WiFiManagerParameter("") {
+        init(id, placeholder, String(value).c_str(), length, "", WFM_LABEL_BEFORE);
+    }
+
+    long getValue() {
+        return String(WiFiManagerParameter::getValue()).toInt();
+    }
+};
+
 char api_key_char[40];
-//String api_key = "";
-//char mqtt_port[6] = "8080";
-//char blynk_token[34] = "YOUR_BLYNK_TOKEN";
+char machine_name_char[40];
+int machine_id_int;
+int use_lan_int;
 
 //flag for saving data
 bool shouldSaveConfig = false;
